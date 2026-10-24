@@ -5,6 +5,7 @@ const words = {
     ready: "GemmaSight is ready. The buttons are Read, Describe, Find and Ask. For Find and Ask, speak after the rising tone.",
     looking: "Looking.",
     hold_steady: "Hold steady.",
+    still_looking: "Still looking. Turn slowly.",
     what_find: "Listening. Say what to find.",
     ask_question: "Listening. Ask your question.",
     mic_blocked: "The microphone is blocked, so please type instead. You can allow it in your browser settings.",
@@ -29,6 +30,7 @@ const words = {
     ready: "GemmaSight iko tayari. Vitufe ni Soma, Eleza, Tafuta na Uliza. Kwa Tafuta na Uliza, ongea baada ya mlio unaopanda.",
     looking: "Ninaangalia.",
     hold_steady: "Shika simu bila kusogeza.",
+    still_looking: "Bado natafuta. Geuka polepole.",
     what_find: "Ninasikiliza. Sema kitu cha kutafuta.",
     ask_question: "Ninasikiliza. Uliza swali lako.",
     mic_blocked: "Maikrofoni imezuiwa, tafadhali andika badala yake. Unaweza kuiruhusu kwenye mipangilio ya kivinjari.",
@@ -425,6 +427,8 @@ async function present(answer) {
   show(answer.speech, answer.hazard ? "hazard" : answer.found ? "found" : "");
   last_speech = answer.speech;
   if (answer.hazard) await cue_hazard();
+  // let the waiting ticks fade first, or iphones can stutter on the first word
+  await wait(150);
   await speak(answer.speech);
 }
 
@@ -478,6 +482,8 @@ async function prompt_for(question, typed_hint) {
   const listening = listen(typed_hint);
   show(question);
   const heard = await listening;
+  // iphones need a moment to switch from the mic back to the speaker, or speech stutters
+  await wait(400);
   if (!heard) {
     show(words[lang].no_speech);
     await speak(words[lang].no_speech);
@@ -495,6 +501,17 @@ async function start_find(target) {
   await speak(intro);
 
   let misses = 0;
+  let last_said = "";
+  let quiet_rounds = 0;
+
+  async function say_once(text) {
+    // a short gap after beeps stops iphones stuttering on the first word
+    await wait(150);
+    await speak(text);
+    last_said = text;
+    quiet_rounds = 0;
+  }
+
   while (finding) {
     const answer = await ask_model("find", find_target);
     if (!finding) break;
@@ -504,17 +521,28 @@ async function start_find(target) {
       last_speech = answer.speech;
       if (answer.hazard) await cue_hazard();
       await cue_found(answer);
-      await speak(answer.speech);
       if (answer.position === "center" && answer.distance === "near") {
-        await speak(words[lang].in_reach);
+        await say_once(`${answer.speech} ${words[lang].in_reach}`);
         stop_find(false);
         break;
       }
+      // only speak when the direction changes, the panned beeps keep pointing the way in between
+      // with a reminder every few rounds so it never goes silent for long
+      quiet_rounds += 1;
+      if (answer.speech !== last_said || quiet_rounds >= 4) await say_once(answer.speech);
     } else {
       misses += 1;
       beep(260, 0.06, 0, 0.15);
-      // do not repeat the hint every round, it gets tiring
-      if (misses % 3 === 1 || answer.hazard || answer.error) await present(answer);
+      if (answer.hazard || answer.error) {
+        await present(answer);
+        last_said = answer.speech;
+      } else if (misses % 4 === 1) {
+        // the same hint twice in a row sounds like a loop, say something different
+        const hint = answer.speech === last_said ? words[lang].still_looking : answer.speech;
+        show(hint);
+        last_speech = hint;
+        await say_once(hint);
+      }
     }
     await wait(250);
   }
