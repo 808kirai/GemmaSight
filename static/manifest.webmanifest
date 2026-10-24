@@ -1,0 +1,9 @@
+{
+  "name": "GemmaSight",
+  "short_name": "GemmaSight",
+  "description": "Open source visual co-pilot for blind and low vision people, powered by Gemma 4",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}

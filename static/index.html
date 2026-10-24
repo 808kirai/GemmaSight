@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <meta name="description" content="GemmaSight, an open source visual co-pilot for blind and low vision people, powered by Gemma 4">
+  <title>GemmaSight</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <button id="start" class="start" type="button">
+    <span class="start-title">GemmaSight</span>
+    <span class="start-hint">Tap anywhere to start</span>
+  </button>
+
+  <main id="app" hidden>
+    <div class="preview">
+      <video id="camera" autoplay playsinline muted aria-hidden="true"></video>
+      <div id="busy" class="busy" hidden aria-hidden="true"></div>
+      <span id="timer" class="timer" hidden aria-hidden="true">0:30</span>
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="assertive">Ready</p>
+
+    <div class="modes">
+      <button type="button" class="mode" data-mode="read" aria-keyshortcuts="1">
+        <span class="mode-name" data-en="Read" data-sw="Soma">Read</span>
+        <span class="mode-hint" data-en="labels, signs, money" data-sw="lebo, alama, pesa">labels, signs, money</span>
+      </button>
+      <button type="button" class="mode" data-mode="describe" aria-keyshortcuts="2">
+        <span class="mode-name" data-en="Describe" data-sw="Eleza">Describe</span>
+        <span class="mode-hint" data-en="what is ahead" data-sw="kilicho mbele">what is ahead</span>
+      </button>
+      <button type="button" class="mode" data-mode="find" aria-keyshortcuts="3">
+        <span class="mode-name" data-en="Find" data-sw="Tafuta">Find</span>
+        <span class="mode-hint" data-en="tap again to stop" data-sw="gusa tena kusimama">tap again to stop</span>
+      </button>
+      <button type="button" class="mode" data-mode="ask" aria-keyshortcuts="4">
+        <span class="mode-name" data-en="Ask" data-sw="Uliza">Ask</span>
+        <span class="mode-hint" data-en="speak a question" data-sw="sema swali">speak a question</span>
+      </button>
+    </div>
+
+    <div class="tools">
+      <button type="button" id="repeat" class="tool" aria-keyshortcuts="r" data-en="Repeat" data-sw="Rudia">Repeat</button>
+      <button type="button" id="directions" class="tool" aria-keyshortcuts="d" aria-label="Directions, clock. Tap for left and right">Clock</button>
+      <button type="button" id="lang" class="tool" aria-keyshortcuts="l" aria-label="Language, English. Tap for Kiswahili">English</button>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
