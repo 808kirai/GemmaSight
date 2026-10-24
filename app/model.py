@@ -2,7 +2,11 @@ import base64
 
 import httpx
 
-gemini_url = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+gemini_base = "https://generativelanguage.googleapis.com/v1beta"
+gemini_url = gemini_base + "/models/{model}:generateContent"
+
+# keep connections open between taps, a fresh secure connection costs most of a second
+keep_alive = httpx.Limits(max_keepalive_connections=5, keepalive_expiry=300)
 
 
 class model_error(Exception):
@@ -18,8 +22,15 @@ class gemini_client:
         self.timeout = timeout
         self.use_thinking_config = True
         self.name = f"gemini api, {model}"
+        self.http = None
 
-    def build_body(self, prompt, image_bytes):
+    def client(self):
+        # made on first use so it belongs to the running event loop
+        if self.http is None or self.http.is_closed:
+            self.http = httpx.AsyncClient(timeout=self.timeout, limits=keep_alive)
+        return self.http
+
+    def build_body(self, prompt, image_bytes, max_tokens=512):
         body = {
             "contents": [{
                 "role": "user",
@@ -28,27 +39,36 @@ class gemini_client:
                     {"text": prompt},
                 ],
             }],
-            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 512},
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": max_tokens},
         }
         if self.use_thinking_config:
             # thinking off keeps answers fast, speed matters more than depth here
             body["generationConfig"]["thinkingConfig"] = {"thinkingLevel": "minimal"}
         return body
 
-    async def ask(self, prompt, image_bytes):
+    async def warm_up(self):
+        # open the connection before the first tap so it is not slower than the rest
+        if self.api_key:
+            await self.client().get(f"{gemini_base}/models/{self.model}", headers={"x-goog-api-key": self.api_key})
+
+    async def ask(self, prompt, image_bytes, max_tokens=512):
         if not self.api_key:
             raise model_error("GEMINI_API_KEY is not set")
         url = gemini_url.format(model=self.model)
         headers = {"x-goog-api-key": self.api_key, "content-type": "application/json"}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(url, headers=headers, json=self.build_body(prompt, image_bytes))
-            if response.status_code == 400 and self.use_thinking_config and "thinking" in response.text.lower():
-                # older model versions reject the thinking setting, so drop it and retry once
-                self.use_thinking_config = False
-                response = await client.post(url, headers=headers, json=self.build_body(prompt, image_bytes))
+        client = self.client()
+        response = await client.post(url, headers=headers, json=self.build_body(prompt, image_bytes, max_tokens))
+        if response.status_code == 400 and self.use_thinking_config and "thinking" in response.text.lower():
+            # older model versions reject the thinking setting, so drop it and retry once
+            self.use_thinking_config = False
+            response = await client.post(url, headers=headers, json=self.build_body(prompt, image_bytes, max_tokens))
         if response.status_code != 200:
             raise model_error(f"gemini api returned {response.status_code}: {response.text[:300]}")
         return read_gemini_text(response.json())
+
+    async def close(self):
+        if self.http is not None:
+            await self.http.aclose()
 
 
 def read_gemini_text(data):
@@ -68,20 +88,32 @@ class ollama_client:
         self.model = model
         self.timeout = timeout
         self.name = f"ollama, {model}"
+        self.http = None
 
-    async def ask(self, prompt, image_bytes):
+    def client(self):
+        if self.http is None or self.http.is_closed:
+            self.http = httpx.AsyncClient(timeout=self.timeout, limits=keep_alive)
+        return self.http
+
+    async def warm_up(self):
+        pass
+
+    async def ask(self, prompt, image_bytes, max_tokens=512):
         body = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(image_bytes).decode()]}],
             "stream": False,
             "format": "json",
-            "options": {"temperature": 0.2},
+            "options": {"temperature": 0.2, "num_predict": max_tokens},
         }
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(f"{self.host}/api/chat", json=body)
+            response = await self.client().post(f"{self.host}/api/chat", json=body)
         except httpx.HTTPError as err:
             raise model_error(f"could not reach ollama at {self.host}: {err}") from err
         if response.status_code != 200:
             raise model_error(f"ollama returned {response.status_code}: {response.text[:300]}")
         return (response.json().get("message") or {}).get("content", "")
+
+    async def close(self):
+        if self.http is not None:
+            await self.http.aclose()

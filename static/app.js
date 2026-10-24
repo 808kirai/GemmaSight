@@ -124,7 +124,7 @@ function speak(text) {
     utterance.lang = speech_lang[lang];
     const voice = pick_voice();
     if (voice) utterance.voice = voice;
-    utterance.rate = 1.05;
+    utterance.rate = 1.1;
     // some browsers never fire onend, so a timer makes sure we move on
     const fallback = setTimeout(resolve, 1500 + text.length * 90);
     utterance.onend = utterance.onerror = () => {
@@ -331,8 +331,11 @@ function set_busy(on) {
   busy = on;
   busy_ring.hidden = !on;
   clearInterval(tick_timer);
-  // a soft tick while waiting so the user knows it is still working
-  if (on) tick_timer = setInterval(() => beep(330, 0.04, 0, 0.12), 900);
+  // a soft tick right away and then while waiting, so the user knows it is working
+  if (on) {
+    beep(330, 0.04, 0, 0.12);
+    tick_timer = setInterval(() => beep(330, 0.04, 0, 0.12), 900);
+  }
 }
 
 // camera
@@ -357,15 +360,17 @@ async function start_camera() {
   await video.play();
 }
 
-function capture() {
+function capture(mode) {
   if (!video.videoWidth) throw new Error("camera not ready");
-  // shrink the frame, smaller images come back faster and still read fine
-  const scale = Math.min(1, max_side / Math.max(video.videoWidth, video.videoHeight));
+  // read needs detail for small print, the other modes get a smaller and faster frame
+  const side = mode === "read" ? max_side : 640;
+  const quality = mode === "read" ? 0.72 : 0.65;
+  const scale = Math.min(1, side / Math.max(video.videoWidth, video.videoHeight));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(video.videoWidth * scale);
   canvas.height = Math.round(video.videoHeight * scale);
   canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.75);
+  return canvas.toDataURL("image/jpeg", quality);
 }
 
 // talking to the server
@@ -376,7 +381,7 @@ async function ask_model(mode, text = "") {
     const response = await fetch("/api/ask", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode, text, lang, directions: current_directions(), image: capture() }),
+      body: JSON.stringify({ mode, text, lang, directions: current_directions(), image: capture(mode) }),
     });
     if (!response.ok) throw new Error(`server returned ${response.status}`);
     return await response.json();
@@ -486,7 +491,7 @@ async function start_find(target) {
       // do not repeat the hint every round, it gets tiring
       if (misses % 3 === 1 || answer.hazard || answer.error) await present(answer);
     }
-    await wait(600);
+    await wait(250);
   }
 }
 

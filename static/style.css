@@ -1,12 +1,12 @@
-/* black, blue and white only, every pairing keeps strong contrast for low vision users */
+/* black and white with shades of black in between, white text on dark boxes everywhere */
 :root {
   --black: #000000;
-  --surface: #0a1430;
-  --blue: #2563eb;
-  --blue-light: #60a5fa;
+  --surface: #111111;
+  --pressed: #222222;
+  --edge: #3d3d3d;
   --white: #ffffff;
   --white-soft: rgba(255, 255, 255, 0.72);
-  --line: rgba(255, 255, 255, 0.5);
+  --line: #3d3d3d;
 }
 
 * { box-sizing: border-box; }
@@ -93,7 +93,7 @@ button:focus-visible {
 .busy {
   position: absolute;
   inset: 0;
-  border: 4px solid var(--blue);
+  border: 4px solid var(--white);
   border-radius: 20px;
   animation: pulse 1.1s ease-in-out infinite;
 }
@@ -114,7 +114,8 @@ button:focus-visible {
   right: 12px;
   padding: 6px 12px;
   border-radius: 999px;
-  background: var(--blue);
+  background: var(--white);
+  color: var(--black);
   font-size: 18px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -144,7 +145,7 @@ button:focus-visible {
   font-weight: 700;
 }
 
-.status.found { color: var(--blue-light); }
+.status.found { font-weight: 700; }
 
 .modes {
   flex: 0 0 auto;
@@ -156,7 +157,7 @@ button:focus-visible {
 .mode {
   /* still well above the 44px touch target size */
   min-height: 66px;
-  border: 2px solid var(--blue);
+  border: 1.5px solid var(--edge);
   border-radius: 18px;
   background: var(--surface);
   display: flex;
@@ -168,11 +169,13 @@ button:focus-visible {
   transition: background 0.15s ease;
 }
 
-.mode:active { background: #12224d; }
+.mode:active { background: var(--pressed); }
 
+/* the running mode flips to white so it is clear which one is on */
 .mode.active {
-  background: var(--blue);
-  border-color: var(--blue);
+  background: var(--white);
+  border-color: var(--white);
+  color: var(--black);
 }
 
 .mode-name {
@@ -187,7 +190,7 @@ button:focus-visible {
   color: var(--white-soft);
 }
 
-.mode.active .mode-hint { color: var(--white); }
+.mode.active .mode-hint { color: var(--black); }
 
 .tools {
   flex: 0 0 auto;
@@ -201,10 +204,10 @@ button:focus-visible {
   padding: 4px 6px;
   border: 1.5px solid var(--line);
   border-radius: 14px;
-  background: transparent;
+  background: var(--surface);
   font-size: clamp(14px, 4vw, 17px);
   font-weight: 600;
   line-height: 1.15;
 }
 
-.tool:active { background: var(--surface); }
+.tool:active { background: var(--pressed); }

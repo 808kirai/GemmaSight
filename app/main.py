@@ -2,6 +2,8 @@ import base64
 import binascii
 import logging
 import os
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -20,6 +22,7 @@ load_dotenv()
 project_root = Path(__file__).resolve().parent.parent
 static_dir = project_root / "static"
 max_image_bytes = 4 * 1024 * 1024
+logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("gemmasight")
 
 model_down_words = {
@@ -40,8 +43,22 @@ def make_client():
     )
 
 
-app = FastAPI(title="GemmaSight")
+@asynccontextmanager
+async def lifespan(app):
+    try:
+        await app.state.model_client.warm_up()
+    except Exception as err:
+        # a failed warm up only means the first answer is a little slower
+        log.warning("warm up failed: %s", err)
+    yield
+    await app.state.model_client.close()
+
+
+app = FastAPI(title="GemmaSight", lifespan=lifespan)
 app.state.model_client = make_client()
+
+# a cap on answer length per mode, shorter limits come back sooner
+max_tokens_by_mode = {"read": 320, "describe": 220, "find": 160, "ask": 220}
 
 
 class ask_request(BaseModel):
@@ -79,8 +96,10 @@ async def ask(request: ask_request):
         raise HTTPException(400, "find and ask need some text")
     image_bytes = decode_image(request.image)
     prompt = build_prompt(request.mode, request.text, request.lang)
+    started = time.perf_counter()
     try:
-        raw = await app.state.model_client.ask(prompt, image_bytes)
+        raw = await app.state.model_client.ask(prompt, image_bytes, max_tokens_by_mode[request.mode])
+        log.info("%s answered in %.1fs", request.mode, time.perf_counter() - started)
     except (model_error, httpx.HTTPError) as err:
         log.warning("model call failed: %s", err)
         return {"speech": model_down_words[request.lang], "hazard": False, "found": False,

@@ -18,8 +18,15 @@ class fake_client:
         self.fail = fail
         self.prompts = []
 
-    async def ask(self, prompt, image_bytes):
+    async def warm_up(self):
+        pass
+
+    async def close(self):
+        pass
+
+    async def ask(self, prompt, image_bytes, max_tokens=512):
         self.prompts.append(prompt)
+        self.max_tokens = max_tokens
         if self.fail:
             raise model_error("down")
         return self.reply
@@ -58,6 +65,8 @@ def test_find_passes_target_to_prompt(client):
     response = client.post("/api/ask", json={"mode": "find", "text": "phone", "image": fake_jpeg})
     assert response.json()["speech"] == "phone, at 10 o'clock, far away."
     assert '"phone"' in fake.prompts[0]
+    # find answers are short, so the cap is the tightest
+    assert fake.max_tokens == 160
 
 
 def test_find_with_word_directions(client):
