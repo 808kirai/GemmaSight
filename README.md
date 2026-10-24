@@ -18,7 +18,9 @@ What it does
 
 - Ask - speak any question about what the camera sees.
 
-- Listening - Find and Ask listen for up to 30 seconds, with a countdown on screen and a soft beep when 5 seconds are left. Listening ends sooner once you stop talking for a moment, or straight away if you tap the button again.
+- Listening - Find and Ask start listening the moment you tap, with a rising tone and a short buzz. They listen for up to 30 seconds, with a countdown on screen and a soft beep when 5 seconds are left. Listening ends sooner once you stop talking for a moment, or straight away if you tap the button again. Camera and microphone permission are both asked for when the app starts.
+
+- Noise handling - speech is turned into text by the phone's own speech engine, which does its own noise filtering. On top of that GemmaSight takes the most confident of several guesses, ignores very unsure results that are usually background noise, drops filler sounds such as um and eh, and only counts new words toward the end of listening so steady noise does not keep the mic open. It tries Kenyan English first and falls back to US English where that is not installed. If the microphone is blocked, a text box appears instead.
 
 - Kiswahili - one tap switches speech in, speech out and the answers to Kiswahili. In Kiswahili, directions start as left and right words, because Swahili time telling uses a different clock. Clock positions are still there on the Directions button and say "kwenye uso wa saa", on the clock face, so they are not mistaken for the time of day.
 

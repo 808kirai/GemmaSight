@@ -2,10 +2,11 @@
 
 const words = {
   en: {
-    ready: "GemmaSight is ready. The buttons are Read, Describe, Find and Ask.",
+    ready: "GemmaSight is ready. The buttons are Read, Describe, Find and Ask. For Find and Ask, speak after the rising tone.",
     looking: "Looking.",
-    what_find: "What should I find?",
-    ask_question: "Ask your question.",
+    what_find: "Listening. Say what to find.",
+    ask_question: "Listening. Ask your question.",
+    mic_blocked: "The microphone is blocked, so please type instead. You can allow it in your browser settings.",
     no_speech: "I did not hear anything. Please try again.",
     searching: "Looking for",
     stopped: "Stopped looking.",
@@ -24,10 +25,11 @@ const words = {
     words_said: "Directions will use left and right, like slightly to your left.",
   },
   sw: {
-    ready: "GemmaSight iko tayari. Vitufe ni Soma, Eleza, Tafuta na Uliza.",
+    ready: "GemmaSight iko tayari. Vitufe ni Soma, Eleza, Tafuta na Uliza. Kwa Tafuta na Uliza, ongea baada ya mlio unaopanda.",
     looking: "Ninaangalia.",
-    what_find: "Nitafute nini?",
-    ask_question: "Uliza swali lako.",
+    what_find: "Ninasikiliza. Sema kitu cha kutafuta.",
+    ask_question: "Ninasikiliza. Uliza swali lako.",
+    mic_blocked: "Maikrofoni imezuiwa, tafadhali andika badala yake. Unaweza kuiruhusu kwenye mipangilio ya kivinjari.",
     no_speech: "Sikusikia chochote. Tafadhali jaribu tena.",
     searching: "Ninatafuta",
     stopped: "Nimeacha kutafuta.",
@@ -57,6 +59,10 @@ const max_side = 768;
 // find and ask listen for up to 30 seconds, and stop sooner once the user goes quiet
 const listen_limit_ms = 30000;
 const silence_ms = 2500;
+// kenyan english first for local accents, with a fallback where it is not installed
+const recognition_langs = { en: ["en-KE", "en-US"], sw: ["sw-KE", "sw-TZ"] };
+const min_confidence = 0.35;
+const filler_words = new Set(["uh", "um", "umm", "hmm", "mm", "mhm", "eh", "ah", "er", "erm", "oh"]);
 
 const video = document.getElementById("camera");
 const status_line = document.getElementById("status");
@@ -139,6 +145,20 @@ function show_timer(seconds) {
   if (seconds !== null) timer_badge.textContent = `0:${String(seconds).padStart(2, "0")}`;
 }
 
+function clean_heard(text) {
+  // drop filler sounds, background noise often comes through as these
+  return text
+    .split(/\s+/)
+    .filter((w) => w && !filler_words.has(w.toLowerCase().replace(/[^\p{L}]/gu, "")))
+    .join(" ")
+    .trim();
+}
+
+function rising_tone() {
+  beep(660, 0.07, 0, 0.18);
+  setTimeout(() => beep(990, 0.09, 0, 0.18), 90);
+}
+
 function listen(typed_hint) {
   const recognition_class = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!recognition_class) {
@@ -147,15 +167,19 @@ function listen(typed_hint) {
   }
   return new Promise((resolve) => {
     const deadline = Date.now() + listen_limit_ms;
+    const langs = recognition_langs[lang];
+    let lang_index = 0;
+    let retry_lang = false;
     let final_text = "";
     let interim_text = "";
+    let last_heard = "";
     let done = false;
     let blocked = false;
     let warned = false;
     let recognition = null;
     let silence_timer = null;
 
-    const heard = () => `${final_text} ${interim_text}`.trim();
+    const heard = () => clean_heard(`${final_text} ${interim_text}`);
 
     const tick = setInterval(() => {
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
@@ -183,33 +207,63 @@ function listen(typed_hint) {
         // already stopped
       }
       beep(520, 0.08, 0, 0.15);
-      resolve(heard());
+      const result = heard();
+      if (!result && blocked) {
+        // mic or speech service refused, typing keeps find and ask usable
+        show(words[lang].mic_blocked, "hazard");
+        resolve((window.prompt(typed_hint) || "").trim());
+      } else {
+        resolve(result);
+      }
     }
 
     function start_once() {
       recognition = new recognition_class();
-      recognition.lang = speech_lang[lang];
+      recognition.lang = langs[lang_index];
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.maxAlternatives = 1;
+      recognition.maxAlternatives = 3;
       recognition.onresult = (event) => {
         interim_text = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          const text = event.results[i][0].transcript;
-          if (event.results[i].isFinal) final_text += " " + text;
-          else interim_text += " " + text;
+          const result = event.results[i];
+          // take the most confident guess of the alternatives
+          let best = result[0];
+          for (let a = 1; a < result.length; a++) {
+            if (result[a].confidence > best.confidence) best = result[a];
+          }
+          if (result.isFinal) {
+            // very unsure final results are usually background noise, some browsers report 0 when they do not know
+            if (best.confidence === 0 || best.confidence >= min_confidence) final_text += " " + best.transcript;
+          } else {
+            interim_text += " " + best.transcript;
+          }
         }
         final_text = final_text.trim();
-        show(`"${heard()}"`);
-        // once they stop talking for a moment, take that as the end
-        clearTimeout(silence_timer);
-        silence_timer = setTimeout(finish, silence_ms);
+        const now_heard = heard();
+        // only real new words count, so steady noise does not keep the mic open
+        if (now_heard && now_heard !== last_heard) {
+          last_heard = now_heard;
+          show(`"${now_heard}"`);
+          clearTimeout(silence_timer);
+          silence_timer = setTimeout(finish, silence_ms);
+        }
       };
       recognition.onerror = (event) => {
         if (event.error === "not-allowed" || event.error === "service-not-allowed") blocked = true;
+        // the kenyan model is not on every phone, fall back to the next language code
+        if (event.error === "language-not-supported" && lang_index < langs.length - 1) {
+          lang_index += 1;
+          retry_lang = true;
+        }
       };
       recognition.onend = () => {
         if (done) return;
+        if (retry_lang) {
+          retry_lang = false;
+          start_once();
+          return;
+        }
         // some phones close the mic after a short silence, reopen it until time runs out
         if (!heard() && !blocked && Date.now() < deadline - 500) start_once();
         else finish();
@@ -217,13 +271,18 @@ function listen(typed_hint) {
       try {
         recognition.start();
       } catch (err) {
+        blocked = true;
         finish();
       }
     }
 
     stop_listening = finish;
-    beep(880, 0.08, 0, 0.15);
+    // stop any speech first so the app does not hear itself
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    // start inside the tap, iphones refuse to open the mic later
     start_once();
+    rising_tone();
+    if (navigator.vibrate) navigator.vibrate(60);
   });
 }
 
@@ -279,11 +338,22 @@ function set_busy(on) {
 // camera
 
 async function start_camera() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: false,
-  });
-  video.srcObject = stream;
+  const video_wanted = { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } };
+  let stream;
+  try {
+    // ask for camera and mic together at the start so the permission prompt shows up front
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: video_wanted,
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (err) {
+    // mic refused, carry on with the camera alone and offer typing later
+    stream = await navigator.mediaDevices.getUserMedia({ video: video_wanted, audio: false });
+  }
+  // release the mic straight away, speech recognition opens its own when needed
+  // and an open mic on iphone sends the voice to the quiet earpiece
+  stream.getAudioTracks().forEach((track) => track.stop());
+  video.srcObject = new MediaStream(stream.getVideoTracks());
   await video.play();
 }
 
@@ -321,6 +391,8 @@ async function ask_model(mode, text = "") {
 function show(text, kind = "") {
   status_line.textContent = text;
   status_line.className = "status" + (kind ? " " + kind : "");
+  // start each new answer from the top of the box
+  status_line.scrollTop = 0;
 }
 
 async function present(answer) {
@@ -360,7 +432,9 @@ async function run_mode(mode) {
         await present(await ask_model("ask", question));
       }
     } else if (mode === "find") {
-      const target = await prompt_for(words[lang].what_find, words[lang].type_find);
+      const heard = await prompt_for(words[lang].what_find, words[lang].type_find);
+      // people often say find my keys, keep just the thing to look for
+      const target = heard.replace(/^(please\s+)?(find|look for|search for|where is|where are|where's|tafuta|nitafutie)\s+/i, "").trim();
       if (target) await start_find(target);
     }
   } finally {
@@ -369,9 +443,11 @@ async function run_mode(mode) {
 }
 
 async function prompt_for(question, typed_hint) {
+  // listen right away with a rising tone instead of a spoken prompt
+  // phones only allow the mic during the tap, and the app would hear its own voice
+  const listening = listen(typed_hint);
   show(question);
-  await speak(question);
-  const heard = await listen(typed_hint);
+  const heard = await listening;
   if (!heard) {
     show(words[lang].no_speech);
     await speak(words[lang].no_speech);

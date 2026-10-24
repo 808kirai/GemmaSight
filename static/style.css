@@ -62,19 +62,22 @@ button:focus-visible {
 
 #app {
   height: 100%;
+  /* dvh follows the phone browser bars so nothing hides behind them */
+  height: 100dvh;
   max-width: 560px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  gap: 10px;
+  padding: 12px 16px calc(10px + env(safe-area-inset-bottom));
 }
 
 #app[hidden] { display: none; }
 
 .preview {
   position: relative;
-  flex: 0 0 38vh;
+  flex: 0 1 36dvh;
+  min-height: 160px;
   border-radius: 20px;
   overflow: hidden;
   background: var(--surface);
@@ -119,10 +122,16 @@ button:focus-visible {
 
 .timer[hidden] { display: none; }
 
+/* the answer box takes the space left over and scrolls when the answer is long */
 .status {
+  flex: 1 1 auto;
+  min-height: 64px;
+  overflow-y: auto;
   margin: 0;
-  min-height: 3.2em;
-  font-size: 20px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--surface);
+  font-size: 17px;
   font-weight: 500;
   line-height: 1.45;
   letter-spacing: -0.01em;
@@ -133,31 +142,29 @@ button:focus-visible {
   background: var(--white);
   color: var(--black);
   font-weight: 700;
-  padding: 10px 14px;
-  border-radius: 14px;
 }
 
 .status.found { color: var(--blue-light); }
 
 .modes {
-  flex: 1;
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .mode {
-  /* keeps buttons easy to hit now the camera view takes more room */
-  min-height: 84px;
+  /* still well above the 44px touch target size */
+  min-height: 66px;
   border: 2px solid var(--blue);
-  border-radius: 22px;
+  border-radius: 18px;
   background: var(--surface);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 12px;
+  gap: 2px;
+  padding: 8px;
   transition: background 0.15s ease;
 }
 
@@ -169,13 +176,13 @@ button:focus-visible {
 }
 
 .mode-name {
-  font-size: clamp(24px, 7vw, 34px);
+  font-size: clamp(20px, 5.6vw, 26px);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .mode-hint {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--white-soft);
 }
@@ -183,18 +190,19 @@ button:focus-visible {
 .mode.active .mode-hint { color: var(--white); }
 
 .tools {
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
 
 .tool {
-  min-height: 60px;
+  min-height: 48px;
   padding: 4px 6px;
   border: 1.5px solid var(--line);
-  border-radius: 16px;
+  border-radius: 14px;
   background: transparent;
-  font-size: clamp(15px, 4.4vw, 19px);
+  font-size: clamp(14px, 4vw, 17px);
   font-weight: 600;
   line-height: 1.15;
 }
