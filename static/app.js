@@ -4,6 +4,7 @@ const words = {
   en: {
     ready: "GemmaSight is ready. The buttons are Read, Describe, Find and Ask. For Find and Ask, speak after the rising tone.",
     looking: "Looking.",
+    hold_steady: "Hold steady.",
     what_find: "Listening. Say what to find.",
     ask_question: "Listening. Ask your question.",
     mic_blocked: "The microphone is blocked, so please type instead. You can allow it in your browser settings.",
@@ -27,6 +28,7 @@ const words = {
   sw: {
     ready: "GemmaSight iko tayari. Vitufe ni Soma, Eleza, Tafuta na Uliza. Kwa Tafuta na Uliza, ongea baada ya mlio unaopanda.",
     looking: "Ninaangalia.",
+    hold_steady: "Shika simu bila kusogeza.",
     what_find: "Ninasikiliza. Sema kitu cha kutafuta.",
     ask_question: "Ninasikiliza. Uliza swali lako.",
     mic_blocked: "Maikrofoni imezuiwa, tafadhali andika badala yake. Unaweza kuiruhusu kwenye mipangilio ya kivinjari.",
@@ -58,6 +60,8 @@ const pitch_by_distance = { near: 990, mid: 740, far: 520 };
 const max_side = 768;
 // find and ask listen for up to 30 seconds, and stop sooner once the user goes quiet
 const listen_limit_ms = 30000;
+// time between the tap and the photo for read and describe
+const focus_ms = 2000;
 const silence_ms = 2500;
 // kenyan english first for local accents, with a fallback where it is not installed
 const recognition_langs = { en: ["en-KE", "en-US"], sw: ["sw-KE", "sw-TZ"] };
@@ -116,10 +120,14 @@ function pick_voice() {
   return not_male || in_lang[0] || null;
 }
 
-function speak(text) {
-  return new Promise((resolve) => {
-    if (!window.speechSynthesis || !text) return resolve();
+async function speak(text) {
+  if (!window.speechSynthesis || !text) return;
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
     speechSynthesis.cancel();
+    // safari repeats the first word when new speech starts right after a cancel
+    await wait(200);
+  }
+  return new Promise((resolve) => {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = speech_lang[lang];
     const voice = pick_voice();
@@ -317,6 +325,12 @@ async function cue_found(answer) {
   }
 }
 
+function shutter() {
+  // a quick click so they know the photo is taken and they can move again
+  beep(1400, 0.03, 0, 0.25);
+  setTimeout(() => beep(900, 0.04, 0, 0.2), 45);
+}
+
 async function cue_hazard() {
   if (navigator.vibrate) navigator.vibrate([250, 100, 250]);
   beep(1320, 0.15, 0, 0.4);
@@ -356,7 +370,14 @@ async function start_camera() {
   // release the mic straight away, speech recognition opens its own when needed
   // and an open mic on iphone sends the voice to the quiet earpiece
   stream.getAudioTracks().forEach((track) => track.stop());
-  video.srcObject = new MediaStream(stream.getVideoTracks());
+  const [camera_track] = stream.getVideoTracks();
+  try {
+    // keep refocusing as the user moves, android chrome supports this and others ignore it
+    await camera_track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+  } catch (err) {
+    // not supported, the camera's own focus still works
+  }
+  video.srcObject = new MediaStream([camera_track]);
   await video.play();
 }
 
@@ -427,8 +448,12 @@ async function run_mode(mode) {
   mark_active(mode);
   try {
     if (mode === "read" || mode === "describe") {
-      show(words[lang].looking);
-      speak(words[lang].looking);
+      // give them a moment to aim and the camera time to focus before the photo
+      const started = Date.now();
+      show(words[lang].hold_steady);
+      await speak(words[lang].hold_steady);
+      await wait(Math.max(0, focus_ms - (Date.now() - started)));
+      shutter();
       await present(await ask_model(mode));
     } else if (mode === "ask") {
       const question = await prompt_for(words[lang].ask_question, words[lang].type_ask);
