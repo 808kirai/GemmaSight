@@ -58,7 +58,7 @@ app = FastAPI(title="GemmaSight", lifespan=lifespan)
 app.state.model_client = make_client()
 
 # a cap on answer length per mode, shorter limits come back sooner
-max_tokens_by_mode = {"read": 320, "describe": 220, "find": 160, "ask": 220}
+max_tokens_by_mode = {"read": 240, "describe": 160, "find": 160, "ask": 160}
 
 
 class ask_request(BaseModel):

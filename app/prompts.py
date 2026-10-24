@@ -19,10 +19,10 @@ Start with what the item is, then the information that matters most for that kin
 For anything else, say what it is, then read the main text.
 Read numbers, dates and amounts exactly as printed. If the text is in another language than the reply, translate it but keep names, numbers and units exactly as printed. If part of the text is cut off or blurry, say which part and how to move the item.
 If a PIN, password or full card number is visible, do not read it aloud, only say that it is there.
-Keep it under 70 words.
+Keep it under 50 words, most important first.
 JSON shape: {{"speech": string, "hazard": false}}""",
 
-    "describe": """Task: describe what is in front of them in at most 3 short sentences.
+    "describe": """Task: describe what is in front of them in at most 2 short sentences.
 First mention anything in their path that could trip, block or hurt them, such as steps, holes, poles, vehicles, wet floors or open doors, and say where it is (left, ahead or right) and how close.
 Then describe the general scene.
 JSON shape: {"speech": string, "hazard": boolean}
@@ -38,7 +38,7 @@ If it is not visible, set found to false and use speech for a hint of at most 12
 Set hazard to true only when something risky is in their path and close.""",
 
     "ask": """Task: answer their question about the image: "{text}".
-Answer in at most 3 short sentences.
+Answer in at most 2 short sentences.
 JSON shape: {{"speech": string, "hazard": boolean}}
 Set hazard to true only when something risky is in their path and close.""",
 }

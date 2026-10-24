@@ -9,6 +9,7 @@ const words = {
     what_find: "Listening. Say what to find.",
     ask_question: "Listening. Ask your question.",
     mic_blocked: "The microphone is blocked, so please type instead. You can allow it in your browser settings.",
+    dictation_off: "Speech recognition is off on this phone, so please type instead. On iPhone, turn on Dictation in Settings, General, Keyboard.",
     no_speech: "I did not hear anything. Please try again.",
     searching: "Looking for",
     stopped: "Stopped looking.",
@@ -34,6 +35,7 @@ const words = {
     what_find: "Ninasikiliza. Sema kitu cha kutafuta.",
     ask_question: "Ninasikiliza. Uliza swali lako.",
     mic_blocked: "Maikrofoni imezuiwa, tafadhali andika badala yake. Unaweza kuiruhusu kwenye mipangilio ya kivinjari.",
+    dictation_off: "Utambuzi wa sauti umezimwa kwenye simu hii, tafadhali andika badala yake. Kwenye iPhone, washa Dictation kwenye Settings, General, Keyboard.",
     no_speech: "Sikusikia chochote. Tafadhali jaribu tena.",
     searching: "Ninatafuta",
     stopped: "Nimeacha kutafuta.",
@@ -63,10 +65,14 @@ const max_side = 768;
 // find and ask listen for up to 30 seconds, and stop sooner once the user goes quiet
 const listen_limit_ms = 30000;
 // time between the tap and the photo for read and describe
-const focus_ms = 2000;
-const silence_ms = 2500;
+const focus_ms = 1500;
+const silence_ms = 1500;
+const is_ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 // kenyan english first for local accents, with a fallback where it is not installed
-const recognition_langs = { en: ["en-KE", "en-US"], sw: ["sw-KE", "sw-TZ"] };
+// iphones get the safe codes straight away because they only allow the first try inside the tap
+const recognition_langs = is_ios
+  ? { en: ["en-US"], sw: ["sw-KE"] }
+  : { en: ["en-KE", "en-US"], sw: ["sw-KE", "sw-TZ"] };
 const min_confidence = 0.35;
 const filler_words = new Set(["uh", "um", "umm", "hmm", "mm", "mhm", "eh", "ah", "er", "erm", "oh"]);
 
@@ -134,7 +140,7 @@ async function speak(text) {
     utterance.lang = speech_lang[lang];
     const voice = pick_voice();
     if (voice) utterance.voice = voice;
-    utterance.rate = 1.1;
+    utterance.rate = 1.2;
     // some browsers never fire onend, so a timer makes sure we move on
     const fallback = setTimeout(resolve, 1500 + text.length * 90);
     utterance.onend = utterance.onerror = () => {
@@ -164,6 +170,20 @@ function clean_heard(text) {
     .trim();
 }
 
+function merge_heard(so_far, next) {
+  // join speech pieces without doubling words
+  // android sends find, then find a, then find a black, so a longer version replaces the shorter one
+  const a = so_far.trim();
+  const b = (next || "").trim();
+  if (!b) return a;
+  if (!a) return b;
+  const a_low = a.toLowerCase();
+  const b_low = b.toLowerCase();
+  if (b_low.startsWith(a_low)) return b;
+  if (a_low.endsWith(b_low)) return a;
+  return `${a} ${b}`;
+}
+
 function rising_tone() {
   beep(660, 0.07, 0, 0.18);
   setTimeout(() => beep(990, 0.09, 0, 0.18), 90);
@@ -184,12 +204,16 @@ function listen(typed_hint) {
     let interim_text = "";
     let last_heard = "";
     let done = false;
-    let blocked = false;
+    // refused is only set when the very first try inside the tap is turned down
+    let refused = null;
+    // later retries happen outside the tap, iphones turn those down, so just stop quietly then
+    let no_more_retries = false;
+    let sessions = 0;
     let warned = false;
     let recognition = null;
     let silence_timer = null;
 
-    const heard = () => clean_heard(`${final_text} ${interim_text}`);
+    const heard = () => clean_heard(merge_heard(final_text, interim_text));
 
     const tick = setInterval(() => {
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
@@ -218,9 +242,11 @@ function listen(typed_hint) {
       }
       beep(520, 0.08, 0, 0.15);
       const result = heard();
-      if (!result && blocked) {
-        // mic or speech service refused, typing keeps find and ask usable
-        show(words[lang].mic_blocked, "hazard");
+      if (!result && refused) {
+        // the phone turned speech down, typing keeps find and ask usable
+        const reason = refused === "service-not-allowed" ? words[lang].dictation_off : words[lang].mic_blocked;
+        show(reason, "hazard");
+        speak(reason);
         resolve((window.prompt(typed_hint) || "").trim());
       } else {
         resolve(result);
@@ -228,14 +254,20 @@ function listen(typed_hint) {
     }
 
     function start_once() {
+      sessions += 1;
+      const first_try = sessions === 1;
       recognition = new recognition_class();
       recognition.lang = langs[lang_index];
-      recognition.continuous = true;
+      // one phrase per session, the browser ends it as soon as they stop talking
+      // that is quicker, and avoids android repeating words and iphones dropping long sessions
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.maxAlternatives = 3;
       recognition.onresult = (event) => {
-        interim_text = "";
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        // rebuild from every result each time, android chrome repeats earlier words in later results
+        let finals = "";
+        let interims = "";
+        for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
           // take the most confident guess of the alternatives
           let best = result[0];
@@ -244,12 +276,13 @@ function listen(typed_hint) {
           }
           if (result.isFinal) {
             // very unsure final results are usually background noise, some browsers report 0 when they do not know
-            if (best.confidence === 0 || best.confidence >= min_confidence) final_text += " " + best.transcript;
+            if (best.confidence === 0 || best.confidence >= min_confidence) finals = merge_heard(finals, best.transcript);
           } else {
-            interim_text += " " + best.transcript;
+            interims = merge_heard(interims, best.transcript);
           }
         }
-        final_text = final_text.trim();
+        final_text = finals;
+        interim_text = interims;
         const now_heard = heard();
         // only real new words count, so steady noise does not keep the mic open
         if (now_heard && now_heard !== last_heard) {
@@ -258,9 +291,14 @@ function listen(typed_hint) {
           clearTimeout(silence_timer);
           silence_timer = setTimeout(finish, silence_ms);
         }
+        // a final result means the phrase is complete, no need to wait any longer
+        if (final_text) finish();
       };
       recognition.onerror = (event) => {
-        if (event.error === "not-allowed" || event.error === "service-not-allowed") blocked = true;
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          if (first_try) refused = event.error;
+          else no_more_retries = true;
+        }
         // the kenyan model is not on every phone, fall back to the next language code
         if (event.error === "language-not-supported" && lang_index < langs.length - 1) {
           lang_index += 1;
@@ -269,19 +307,19 @@ function listen(typed_hint) {
       };
       recognition.onend = () => {
         if (done) return;
-        if (retry_lang) {
+        if (retry_lang && !no_more_retries) {
           retry_lang = false;
           start_once();
           return;
         }
-        // some phones close the mic after a short silence, reopen it until time runs out
-        if (!heard() && !blocked && Date.now() < deadline - 500) start_once();
+        // nothing heard yet, reopen the mic until time runs out where the phone allows it
+        if (!heard() && !refused && !no_more_retries && Date.now() < deadline - 500) start_once();
         else finish();
       };
       try {
         recognition.start();
       } catch (err) {
-        blocked = true;
+        if (first_try) refused = "not-allowed";
         finish();
       }
     }
@@ -468,7 +506,7 @@ async function run_mode(mode) {
     } else if (mode === "find") {
       const heard = await prompt_for(words[lang].what_find, words[lang].type_find);
       // people often say find my keys, keep just the thing to look for
-      const target = heard.replace(/^(please\s+)?(find|look for|search for|where is|where are|where's|tafuta|nitafutie)\s+/i, "").trim();
+      const target = heard.replace(/^(please\s+)?((find|look for|search for|where is|where are|where's|tafuta|nitafutie)\s+)+/i, "").trim();
       if (target) await start_find(target);
     }
   } finally {
@@ -483,7 +521,7 @@ async function prompt_for(question, typed_hint) {
   show(question);
   const heard = await listening;
   // iphones need a moment to switch from the mic back to the speaker, or speech stutters
-  await wait(400);
+  await wait(300);
   if (!heard) {
     show(words[lang].no_speech);
     await speak(words[lang].no_speech);
@@ -498,6 +536,8 @@ async function start_find(target) {
   await keep_screen_on(true);
   const intro = `${words[lang].searching} ${target}.`;
   show(intro);
+  // send the first photo while the intro is still being spoken, so the first answer comes sooner
+  let next_answer = ask_model("find", find_target);
   await speak(intro);
 
   let misses = 0;
@@ -513,7 +553,8 @@ async function start_find(target) {
   }
 
   while (finding) {
-    const answer = await ask_model("find", find_target);
+    const answer = await (next_answer || ask_model("find", find_target));
+    next_answer = null;
     if (!finding) break;
     if (answer.found) {
       misses = 0;
@@ -536,6 +577,8 @@ async function start_find(target) {
       if (answer.hazard || answer.error) {
         await present(answer);
         last_said = answer.speech;
+        // back off a little when the connection fails, so it does not spin
+        if (answer.error) await wait(1500);
       } else if (misses % 4 === 1) {
         // the same hint twice in a row sounds like a loop, say something different
         const hint = answer.speech === last_said ? words[lang].still_looking : answer.speech;
@@ -544,7 +587,6 @@ async function start_find(target) {
         await say_once(hint);
       }
     }
-    await wait(250);
   }
 }
 
