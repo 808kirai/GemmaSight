@@ -1,5 +1,6 @@
 import base64
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -118,6 +119,50 @@ def test_gemini_body_has_image_and_text():
     assert parts[0]["inline_data"]["mime_type"] == "image/jpeg"
     assert parts[1]["text"] == "hello"
     assert body["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "minimal"
+
+
+def test_gemini_retries_once_on_server_error():
+    import asyncio
+
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            return httpx.Response(500, json={"error": {"message": "Internal error encountered."}})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": '{"speech": "ok"}'}]}}]})
+
+    model = gemini_client("key", "gemma-4-26b-a4b-it")
+    model.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    assert asyncio.run(model.ask("hi", b"\xff\xd8")) == '{"speech": "ok"}'
+    assert len(calls) == 2
+
+
+def test_gemini_sends_backup_when_slow(monkeypatch):
+    import asyncio
+
+    import app.model as model_module
+
+    monkeypatch.setattr(model_module, "hedge_after", 0.05)
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            # the first request hangs, like google on a slow moment
+            await asyncio.sleep(5)
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": f'{{"speech": "answer {len(calls)}"}}'}]}}]})
+
+    async def run():
+        model = gemini_client("key", "gemma-4-26b-a4b-it")
+        model.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        start = asyncio.get_running_loop().time()
+        result = await model.ask("hi", b"\xff\xd8")
+        return result, asyncio.get_running_loop().time() - start
+
+    result, took = asyncio.run(run())
+    assert result == '{"speech": "answer 2"}'
+    assert took < 1
 
 
 def test_gemini_text_skips_thoughts():

@@ -44,6 +44,51 @@ def test_find_uses_chosen_direction_style():
     assert answer["clock"] == 10
 
 
+def test_find_says_steps_when_given():
+    raw = '{"found": true, "label": "mouse", "position": "slightly left", "distance": "mid", "steps": 3}'
+    answer = build_answer("find", raw, "en")
+    assert answer["speech"] == "mouse, at 11 o'clock, about 3 steps away."
+    assert answer["steps"] == 3
+
+
+def test_find_one_step_is_singular():
+    raw = '{"found": true, "label": "door", "position": "center", "steps": "1"}'
+    assert build_answer("find", raw, "en")["speech"] == "door, at 12 o'clock, about 1 step away."
+
+
+def test_find_zero_steps_is_within_reach_and_near():
+    raw = '{"found": true, "label": "cup", "position": "center", "distance": "far", "steps": 0}'
+    answer = build_answer("find", raw, "en")
+    assert answer["speech"] == "cup, at 12 o'clock, within reach."
+    # steps win over the rough band, so the auto stop and beep pitch follow them
+    assert answer["distance"] == "near"
+
+
+def test_find_steps_in_swahili():
+    raw = '{"found": true, "label": "kiti", "position": "right", "steps": 4.4}'
+    assert build_answer("find", raw, "sw")["speech"] == "kiti, upande wa kulia, takriban hatua 4."
+
+
+def test_find_bad_steps_fall_back_to_band():
+    raw = '{"found": true, "label": "bag", "position": "left", "distance": "far", "steps": "lots"}'
+    answer = build_answer("find", raw, "en")
+    assert answer["steps"] is None
+    assert answer["speech"] == "bag, at 10 o'clock, far away."
+
+
+def test_far_steps_set_far_band():
+    raw = '{"found": true, "label": "gate", "position": "center", "steps": 12}'
+    assert build_answer("find", raw, "en")["distance"] == "far"
+
+
+def test_prompts_ask_for_steps_where_useful():
+    for mode in ("describe", "find", "ask"):
+        prompt = build_prompt(mode, "keys", "en")
+        assert "70 cm" in prompt
+        assert "{steps_line}" not in prompt
+    assert "70 cm" not in build_prompt("read", "", "en")
+
+
 def test_direction_phrase_unknown_is_empty():
     assert direction_phrase("behind", "en") == ""
 

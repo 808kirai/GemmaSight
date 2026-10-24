@@ -1,3 +1,4 @@
+import asyncio
 import base64
 
 import httpx
@@ -7,6 +8,12 @@ gemini_url = gemini_base + "/models/{model}:generateContent"
 
 # keep connections open between taps, a fresh secure connection costs most of a second
 keep_alive = httpx.Limits(max_keepalive_connections=5, keepalive_expiry=300)
+
+# server side errors worth one more try
+retry_codes = {500, 502, 503, 504}
+
+# a normal answer takes about two seconds, past this a backup request is sent
+hedge_after = 3.5
 
 
 class model_error(Exception):
@@ -54,6 +61,25 @@ class gemini_client:
     async def ask(self, prompt, image_bytes, max_tokens=512):
         if not self.api_key:
             raise model_error("GEMINI_API_KEY is not set")
+        first = asyncio.create_task(self.ask_once(prompt, image_bytes, max_tokens))
+        done, _ = await asyncio.wait({first}, timeout=hedge_after)
+        if done:
+            return first.result()
+        # google is having a slow moment, send a backup and take whichever answers first
+        backup = asyncio.create_task(self.ask_once(prompt, image_bytes, max_tokens))
+        waiting = {first, backup}
+        error = None
+        while waiting:
+            done, waiting = await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                if task.exception() is None:
+                    for other in waiting:
+                        other.cancel()
+                    return task.result()
+                error = task.exception()
+        raise error
+
+    async def ask_once(self, prompt, image_bytes, max_tokens):
         url = gemini_url.format(model=self.model)
         headers = {"x-goog-api-key": self.api_key, "content-type": "application/json"}
         client = self.client()
@@ -61,6 +87,10 @@ class gemini_client:
         if response.status_code == 400 and self.use_thinking_config and "thinking" in response.text.lower():
             # older model versions reject the thinking setting, so drop it and retry once
             self.use_thinking_config = False
+            response = await client.post(url, headers=headers, json=self.build_body(prompt, image_bytes, max_tokens))
+        if response.status_code in retry_codes:
+            # google sometimes has a one off hiccup, one quick retry usually works
+            await asyncio.sleep(0.3)
             response = await client.post(url, headers=headers, json=self.build_body(prompt, image_bytes, max_tokens))
         if response.status_code != 200:
             raise model_error(f"gemini api returned {response.status_code}: {response.text[:300]}")

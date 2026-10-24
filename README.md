@@ -12,9 +12,11 @@ What it does
 
 - Read - reads what is in front of the camera and says first what matters most for that kind of item. It knows 18 kinds of everyday things, listed in `app/everyday_items.py`. Some examples: the dose and expiry date on medicine, Kenyan shilling notes and coins, expiry dates and allergens on food, the amount, balance and code in mobile money messages, appliance dials, electricity tokens, clothing labels, matatu route numbers, receipts and bills. It never guesses missing text, and if a PIN or card number is visible it says it is there without reading it aloud. To add a new kind of item, add one line to that file.
 
-- Describe - up to three short sentences about what is in front of you. Anything in your path that could trip or hurt you is said first, with a warning tone and vibration.
+- Describe - up to two short sentences about what is in front of you. Anything in your path that could trip or hurt you is said first, with a warning tone and vibration.
 
-- Find - say what you are looking for, like "my keys". GemmaSight keeps checking the camera and says where it is. The Directions button picks how. Clock gives positions like "keys, at 11 o'clock, within reach", the way many blind people are taught. Left, right gives plain words like "keys, slightly to your left, within reach". The choice is remembered. The beeps are panned left or right toward the object and get higher as it gets closer. It stops by itself when the object is right in front of you.
+- Distance in steps - Find, Describe and Ask give rough distances in walking steps, where one step is about 70 cm, like "about 3 steps away", or "within reach" for things at arm's length. They are always said as about, because they are estimates from a single photo.
+
+- Find - say what you are looking for, like "my keys". GemmaSight keeps checking the camera and says where it is. The Directions button picks how. Clock gives positions like "keys, at 11 o'clock, about 2 steps away", the way many blind people are taught. Left, right gives plain words like "keys, slightly to your left, about 2 steps away". The choice is remembered. The beeps are panned left or right toward the object and get higher as it gets closer. It stops by itself when the object is right in front of you.
 
 - Ask - speak any question about what the camera sees.
 

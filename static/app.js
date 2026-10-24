@@ -65,7 +65,7 @@ const max_side = 768;
 // find and ask listen for up to 30 seconds, and stop sooner once the user goes quiet
 const listen_limit_ms = 30000;
 // time between the tap and the photo for read and describe
-const focus_ms = 1500;
+const focus_ms = 1000;
 const silence_ms = 1500;
 const is_ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 // kenyan english first for local accents, with a fallback where it is not installed
@@ -424,7 +424,7 @@ async function start_camera() {
 function capture(mode) {
   if (!video.videoWidth) throw new Error("camera not ready");
   // read needs detail for small print, the other modes get a smaller and faster frame
-  const side = mode === "read" ? max_side : 640;
+  const side = mode === "read" ? max_side : 512;
   const quality = mode === "read" ? 0.72 : 0.65;
   const scale = Math.min(1, side / Math.max(video.videoWidth, video.videoHeight));
   const canvas = document.createElement("canvas");

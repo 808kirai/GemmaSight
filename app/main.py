@@ -103,7 +103,7 @@ async def ask(request: ask_request):
     except (model_error, httpx.HTTPError) as err:
         log.warning("model call failed: %s", err)
         return {"speech": model_down_words[request.lang], "hazard": False, "found": False,
-                "position": None, "clock": None, "distance": None, "error": True}
+                "position": None, "clock": None, "distance": None, "steps": None, "error": True}
     return build_answer(request.mode, raw, request.lang, request.directions)
 
 

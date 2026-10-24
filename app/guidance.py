@@ -37,6 +37,35 @@ distance_words = {
     "sw": {"near": "karibu sana", "mid": "hatua chache", "far": "mbali"},
 }
 
+def steps_phrase(steps, lang):
+    # always worded as about, a single camera can only estimate distance
+    if steps == 0:
+        return distance_words[lang]["near"]
+    if lang == "sw":
+        return f"takriban hatua {steps}"
+    return f"about {steps} step away" if steps == 1 else f"about {steps} steps away"
+
+
+def as_steps(value):
+    # the model may send 3, 3.5 or "3", anything else is ignored
+    try:
+        steps = round(float(value))
+    except (TypeError, ValueError):
+        return None
+    if steps < 0 or steps > 50:
+        return None
+    return steps
+
+
+def band_for_steps(steps):
+    # turn steps into the near, mid and far bands that drive beep pitch and the auto stop
+    if steps == 0:
+        return "near"
+    if steps <= 4:
+        return "mid"
+    return "far"
+
+
 not_found_words = {
     "en": "Not in view yet. Turn slowly.",
     "sw": "Bado sikioni. Geuka polepole.",
@@ -99,6 +128,7 @@ def build_answer(mode, raw_text, lang, directions=None):
             "position": None,
             "clock": None,
             "distance": None,
+            "steps": None,
         }
 
     position = str(data.get("position") or "").strip().lower() or None
@@ -107,6 +137,10 @@ def build_answer(mode, raw_text, lang, directions=None):
     distance = str(data.get("distance") or "").strip().lower() or None
     if distance not in distance_words["en"]:
         distance = None
+    steps = as_steps(data.get("steps"))
+    if steps is not None:
+        # steps are the finer estimate, so the band follows them
+        distance = band_for_steps(steps)
 
     answer = {
         "speech": str(data.get("speech") or "").strip(),
@@ -115,6 +149,7 @@ def build_answer(mode, raw_text, lang, directions=None):
         "position": position,
         "clock": clock_by_position.get(position) if position else None,
         "distance": distance,
+        "steps": steps,
     }
 
     if mode == "read":
@@ -129,13 +164,16 @@ def build_answer(mode, raw_text, lang, directions=None):
             direction = direction_phrase(position, lang, directions)
             if direction:
                 parts.append(direction)
-            if distance:
+            if steps is not None:
+                parts.append(steps_phrase(steps, lang))
+            elif distance:
                 parts.append(distance_words[lang][distance])
             answer["speech"] = ", ".join(parts) + "."
         else:
             answer["position"] = None
             answer["clock"] = None
             answer["distance"] = None
+            answer["steps"] = None
             answer["speech"] = answer["speech"] or not_found_words[lang]
 
     if not answer["speech"]:
